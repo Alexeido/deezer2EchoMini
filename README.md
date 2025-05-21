@@ -42,15 +42,13 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
   - [Table of Contents:](#table-of-contents)
   - [Get started](#get-started)
     - [1. Install Python](#1-install-python)
-    - [2. Install deezer-downloader](#2-install-deezer-downloader)
+    - [2. Install deezer2EchoMini](#2-install-deezer2echomini)
     - [3. Retrieve your `arl` cookie](#3-retrieve-your-arl-cookie)
     - [4. Set the config file](#4-set-the-config-file)
     - [5. Run deezer-downloader](#5-run-deezer-downloader)
     - [6. Access the frontend](#6-access-the-frontend)
   - [Settings](#settings)
   - [Specific use cases](#specific-use-cases)
-    - [Run with Docker](#run-with-docker)
-    - [Run with Vagrant](#run-with-vagrant)
     - [Run as systemd service](#run-as-systemd-service)
     - [Developer setup](#developer-setup)
     - [Deployment with Ansible](#deployment-with-ansible)
@@ -58,6 +56,7 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
   - [Shortcuts](#shortcuts)
   - [Tests](#tests)
   - [Changelog](#changelog)
+    - [Custom Version 2.1.0 Echo Mini (21.05.2025)](#custom-version-210-echo-mini-21052025)
     - [Version 2.0.0 (27.03.2023)](#version-200-27032023)
     - [Version 1.3.3 (27.12.2021)](#version-133-27122021)
     - [Version 1.3.2 (26.11.2021)](#version-132-26112021)
@@ -71,12 +70,25 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
 ### 1. Install Python
 [python.org](https://www.python.org/about/)
 
-### 2. Install deezer-downloader
+### 2. Install deezer2EchoMini
 ```bash
-pip install --user deezer-downloader
+# Clone the repository
+git clone https://github.com/Alexeido/deezer2EchoMini.git
+cd deezer2EchoMini
+
+# Install using pip
+pip install --user .
+
+# Or to install in development mode (changes to code will be reflected immediately)
+pip install --user -e .
+
+# Run the application
+deezer-downloader --show-config-template > config.ini
+# Edit the config.ini file to add your arl cookie and other settings
+deezer-downloader --config config.ini
 ```
 
-If you want to use the Docker image, [scroll](#run-with-docker) down a bit.
+Note: This will install the FiiO SnowSky Echo Mini optimized version with all enhanced metadata and album cover features. Do not use `pip install deezer-downloader` as that would install the original version without the Echo Mini optimizations.
 
 ### 3. Retrieve your `arl` cookie
 
@@ -148,30 +160,6 @@ worker 0 is done with task: {'track_id': 8086130, 'add_to_playlist': False} (sta
 
 ## Specific use cases
 
-### Run with Docker
-
-There is a Docker image hosted on [hub.docker.com](https://hub.docker.com/r/kmille2/deezer-downloader). Please use an ARL cookie of your Deezer account.
-
-```bash
-mkdir downloads
-sudo docker run -p 5000:5000 --volume $(pwd)/downloads/:/mnt/deezer-downloader --env DEEZER_COOKIE_ARL=your_ARL_cookie kmille2/deezer-downloader:latest 
-xdg-open http://localhost:5000
-```
-
-### Run with Vagrant
-
-```bash	
-cd deployment
-vagrant up
-vagrant ssh
-sudo vim /opt/deezer/settings.ini # insert your Deezer cookie
-cd /opt/deezer && sudo poetry run deezer-downloader --config settings.ini
-
-# On the host:
-xdg-open http://localhost:5000 # view frontend in the browser
-ncmpcpp -h 127.0.0.1 # try the mpd client
-```
-
 ### Run as systemd service
 
 We use it with nginx and [ympd](https://github.com/notandy/ympd) as mpd frontend:
@@ -221,6 +209,13 @@ https://github.com/kmille/music-ansible (not maintained anymore)
 
 ## Screenshots
 
+Results
+![](/docs/screenshots/2echomini.png)  
+![](/docs/screenshots/1.jpg)  
+![](/docs/screenshots/1.jpg)  
+Accents includeds
+![](/docs/screenshots/3.jpg)  
+
 Search for songs. You can listen to a 30 second preview in the browser.  
 
 ![](/docs/screenshots/2020-05-13-211356_screenshot.png)  
@@ -266,6 +261,16 @@ DEEZER_DOWNLOADER_CONFIG_FILE=settings.ini poetry run pytest -v -s
 ```
 
 ## Changelog
+
+### Custom Version 2.1.0 Echo Mini (21.05.2025)
+
+- **FiiO SnowSky Echo Mini optimizations for Flacs**:
+  - Convert album covers to 750px × 750px JPG with baseline encoding for faster loading
+  - Use Vorbis metadata for FLAC files instead of ID3 tags for better compatibility
+  - Add genre tags when available from Deezer
+  - Implement intelligent release date handling (randomizes day/month when only year is specified)
+  - Optimize metadata formatting for perfect display on Echo Mini devices
+
 
 ### Version 2.0.0 (27.03.2023)
 
