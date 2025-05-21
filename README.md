@@ -234,14 +234,6 @@ List songs of an album.
 
 ![](/docs/screenshots/2020-05-13-211528_screenshot.png)
 
-Download songs with youtube-dl  
-
-![](/docs/screenshots/2020-05-13-211622_screenshot.png)
-
-Download a Spotify playlist.   
-
-![](/docs/screenshots/2020-05-13-211629_screenshot.png)  
-
 Download a Deezer playlist.    
 
 ![](/docs/screenshots/2020-05-13-211633_screenshot.png)  
