@@ -1,6 +1,6 @@
 # Deezer2EchoMini: Enhanced Deezer Downloader for FiiO SnowSky Echo Mini 
 
-This fork of the [Deezer Downloader](https://github.com/kmille/deezer-downloader) project adds complete FLAC support optimized for the FiiO SnowSky Echo Mini portable music player:
+This fork of the [Deezer Downloader](https://github.com/kmille/deezer-downloader) project adds complete FLAC support optimized for the FiiO SnowSky Echo Mini portable music player. Infinite thanks to @kmille, the original creator, without whose brilliant work and dedication this project would be totally impossible. His excellent codebase has made these specific improvements for the Echo Mini possible.
 
 ### 🆕 Added Features:
 - **Optimized Album Covers**: Automatically converts all album covers to 750px × 750px JPG with baseline encoding for faster loading on the Echo Mini
