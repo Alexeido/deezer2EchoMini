@@ -971,15 +971,6 @@ def get_album_metadata(album_id):
 
                     # Guardamos los datos en un log para depuración
 
-                    try:
-                        with open("album_data", "a", encoding="utf-8") as log_file:
-                            log_file.write(f"Album : {album_id}\n")
-                            for key, value in album_data.items():
-                                log_file.write(f"{key}: {value}\n")
-                            log_file.write("\t--------------------------------------------------\n")
-                    except Exception as e:
-                        print(f"Warning: Could not write to album log: {e}")
-                    
                     
                     # Añadir GENRES vacío si no existe
                     if "GENRES" not in album_data:
