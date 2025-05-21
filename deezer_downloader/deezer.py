@@ -3,6 +3,9 @@ import re
 import json
 from typing import Optional, Sequence
 
+import requests
+import json
+
 from deezer_downloader.configuration import config
 
 from Crypto.Hash import MD5
@@ -12,6 +15,10 @@ import urllib.parse
 import html.parser
 import requests
 from binascii import a2b_hex, b2a_hex
+
+# Añade esta importación al principio del archivo
+from mutagen.flac import FLAC
+import os
 
 
 # BEGIN TYPES
@@ -25,6 +32,68 @@ session = None
 license_token = {}
 sound_format = ""
 USER_AGENT = "Mozilla/5.0 (X11; Linux i686; rv:135.0) Gecko/20100101 Firefox/135.0"
+
+def get_genres_from_api(album_id):
+    """
+    Obtiene los géneros de un álbum usando la API pública de Deezer
+    
+    Args:
+        album_id: ID del álbum en Deezer
+        
+    Returns:
+        list: Lista de nombres de géneros o lista vacía si no se encuentran
+    """
+    try:
+        # Usar la API pública de Deezer que no requiere autenticación
+        url = f"https://api.deezer.com/album/{album_id}"
+        response = requests.get(url)
+        
+        if response.status_code != 200:
+            print(f"Error al obtener información del álbum {album_id}: {response.status_code}")
+            return []
+            
+        data = response.json()
+        # Extraer géneros
+        genres = []
+        if "genres" in data and "data" in data["genres"]:
+            for genre in data["genres"]["data"]:
+                if "name" in genre:
+                    genres.append(genre["name"])
+            
+            print(f"Géneros encontrados en API para álbum {album_id}: {genres}")
+            return genres
+        else:
+            print(f"No se encontraron géneros en la API para álbum {album_id}")
+            return []
+            
+    except Exception as e:
+        print(f"Error obteniendo géneros desde API: {e}")
+        return []
+
+def get_track_info_from_api(track_id):
+    """
+    Obtiene información adicional de una canción usando la API pública de Deezer
+    
+    Args:
+        track_id: ID de la canción en Deezer
+        
+    Returns:
+        dict: Diccionario con metadatos adicionales o None si hay error
+    """
+    try:
+        url = f"https://api.deezer.com/track/{track_id}"
+        response = requests.get(url)
+        
+        if response.status_code != 200:
+            print(f"Error al obtener información de la canción {track_id}: {response.status_code}")
+            return None
+            
+        data = response.json()
+        
+        return data
+    except Exception as e:
+        print(f"Error obteniendo información de canción desde API: {e}")
+        return None
 
 
 def get_user_data() -> tuple[str, str]:
@@ -319,6 +388,29 @@ def writeid3v2(fo, song):
     ])
 
     try:
+        genres = []
+        if "GENRES" in album_Data and album_Data["GENRES"]:
+            for genre_info in album_Data["GENRES"]:
+                if "name" in genre_info:
+                    genres.append(genre_info["name"])
+            if genres:
+                genre_str = "; ".join(genres)
+                id3.append(maketag("TCON", makeutf8(genre_str)))  # Genre Content Type
+    except Exception as e:
+        print(f"ERROR: Could not add genre information to ID3: {e}")
+
+    # Añade etiqueta para el año original de lanzamiento si está disponible
+    try:
+        if "ORIGINAL_RELEASE_DATE" in album_Data and album_Data["ORIGINAL_RELEASE_DATE"]:
+            original_year = str(album_Data["ORIGINAL_RELEASE_DATE"][:4])
+            id3.append(maketag("TORY", makeutf8(original_year)))  # Original Release Year
+    except Exception as e:
+        print(f"ERROR: Could not add original release year to ID3: {e}")
+
+
+
+
+    try:
         id3.append(maketag("APIC", makepic(downloadpicture(song["ALB_PICTURE"]))))
     except Exception as e:
         print("ERROR: no album cover?", e)
@@ -368,12 +460,308 @@ def get_song_url(track_token: str, quality: int = 3) -> str:
     return url
 
 
+def add_vorbis_tags(song: dict, output_file: str) -> None:
+    """
+    Add Vorbis comments to a FLAC file
+    """
+    #print(f"Adding Vorbis comments to FLAC file: {output_file}")
+    # Primero guardamos en un log los metadatos de la canción en un archivo song_data que tendra el nombre y sus metadatos
+    # con el nombre de la cancion
+
+    try:
+        audio = FLAC(output_file)
+        
+        # Clear existing tags
+        audio.clear()
+        
+        # Map Deezer metadata to Vorbis tags
+        if "SNG_TITLE" in song:
+            audio["TITLE"] = song["SNG_TITLE"]
+        if "ART_NAME" in song:
+            audio["ARTIST"] = song["ART_NAME"]
+        if "ALB_TITLE" in song:
+            audio["ALBUM"] = song["ALB_TITLE"]
+        if "TRACK_NUMBER" in song:
+            audio["TRACKNUMBER"] = str(song["TRACK_NUMBER"])
+        if "DISK_NUMBER" in song:
+            audio["DISCNUMBER"] = str(song["DISK_NUMBER"])
+        if "ISRC" in song:
+            audio["ISRC"] = song["ISRC"]
+        if "DURATION" in song:
+            audio["LENGTH"] = str(song["DURATION"])
+
+        # Obtener metadatos del álbum si tenemos un album_id
+        album_metadata = None
+        if "ALB_ID" in song:
+            #print(f"Fetching album metadata for '{song.get('ALB_TITLE', 'Unknown album')}' (Album ID: {song['ALB_ID']})")
+            album_metadata = get_album_metadata(song['ALB_ID'])
+
+        # Add genre information usando múltiples fuentes
+        try:
+            genres = []
+            # 1. First try to get genres from the song itself
+            if "GENRES" in song and song["GENRES"]:
+                for genre_info in song["GENRES"]:
+                    if "name" in genre_info:
+                        genres.append(genre_info["name"])
+            
+            # 2. If no genres in song, try album metadata
+            if not genres and album_metadata and "GENRES" in album_metadata and album_metadata["GENRES"]:
+                for genre_info in album_metadata["GENRES"]:
+                    if "name" in genre_info:
+                        genres.append(genre_info["name"])
+            
+            # 3. Si aún no tenemos géneros, intentar con la API pública de Deezer (album)
+            if not genres and "ALB_ID" in song:
+                api_genres = get_genres_from_api(song["ALB_ID"])
+                if api_genres:
+                    genres = api_genres
+            
+            # 4. Como último recurso, intentar con la API de track
+            if not genres and "SNG_ID" in song:
+                track_info = get_track_info_from_api(song["SNG_ID"])
+                if track_info and "album" in track_info and "genre_id" in track_info["album"]:
+                    # Si tenemos el genre_id, obtengamos el nombre del género
+                    try:
+                        genre_url = f"https://api.deezer.com/genre/{track_info['album']['genre_id']}"
+                        genre_resp = requests.get(genre_url)
+                        if genre_resp.status_code == 200:
+                            genre_data = genre_resp.json()
+                            if "name" in genre_data and genre_data["name"] != "Todos":
+                                genres.append(genre_data["name"])
+                                #print(f"Using genre from Deezer Genre API: {genres}")
+                    except Exception as e:
+                        print(f"Error getting genre name: {e}")
+            
+            # 5. Set genres in tags - MODIFICADO PARA USAR PUNTO Y COMA (;) COMO SEPARADOR
+            if genres:
+                # Lista para almacenar todos los géneros después de dividir los que vienen con punto y coma
+                genres_final = []
+                
+                # Procesar cada género y dividir los que vengan con punto y coma
+                for genre in genres:
+                    if ";" in genre:
+                        # Si el género contiene punto y coma, lo dividimos
+                        split_genres = [g.strip() for g in genre.split(";")]
+                        genres_final.extend(split_genres)
+                    else:
+                        genres_final.append(genre)
+                
+                # Aseguramos que no hay géneros duplicados ni vacíos
+                genres_final = [g for g in list(dict.fromkeys(genres_final)) if g]
+                
+                # En FLAC podemos poner los géneros como valores múltiples O como un solo string con separadores
+                # Implementamos ambas formas para máxima compatibilidad
+                
+                # 1. Como valores múltiples (etiquetas separadas)
+                audio["GENRE"] = genres_final
+                
+                # 2. Como un solo string con separador punto y coma (,)
+                genre_string = ", ".join(genres_final)
+                audio["GENRETEXT"] = genre_string  # Campo adicional para asegurar compatibilidad
+                
+                #print(f"Added genres: {genres_final} ('{genre_string}')")
+        
+                
+        except Exception as e:
+            print(f"ERROR: Could not add genre information: {e}")
+                
+        # Add release dates - NUEVA IMPLEMENTACIÓN MEJORADA PARA WINDOWS
+        try:
+            # Determinar qué fecha usar (priorizar original release date)
+            release_date = None
+            # 2. Si no hay fecha de API, usar fuentes tradicionales
+            if not release_date:
+                # Primero intenta usar la fecha original de la canción
+                if "ORIGINAL_RELEASE_DATE" in song:
+                    release_date = song["ORIGINAL_RELEASE_DATE"]
+                    source = "song original"
+                # Si no hay original, intenta physical
+                elif "PHYSICAL_RELEASE_DATE" in song:
+                    release_date = song["PHYSICAL_RELEASE_DATE"]
+                    source = "song physical"
+                # Si no hay fechas en la canción, intenta del álbum
+                elif album_metadata:
+                    if "ORIGINAL_RELEASE_DATE" in album_metadata:
+                        release_date = album_metadata["ORIGINAL_RELEASE_DATE"]
+                        source = "album original"
+                    elif "PHYSICAL_RELEASE_DATE" in album_metadata:
+                        release_date = album_metadata["PHYSICAL_RELEASE_DATE"]
+                        source = "album physical"
+            
+            if release_date:
+                # Extraer año, mes, día
+                year = release_date[:4]
+                
+                # Añadir todos los campos de fecha que Windows y otros reproductores podrían reconocer
+                #print(f"Using {source} release date: {release_date}")
+                
+                # Si la fecha tiene el mes y dia 1 lo aleatorizamos a un mes y dia random
+                if release_date[5:7] == "01" and release_date[8:10] == "01":
+                    import random
+                    month = str(random.randint(1, 12)).zfill(2)
+                    if month == "02":
+                        day = str(random.randint(1, 28)).zfill(2)
+                    elif month in ["04", "06", "09", "11"]:
+                        day = str(random.randint(1, 30)).zfill(2)
+                    else:
+                        day = str(random.randint(1, 31)).zfill(2)
+                    release_date = f"{year}-{month}-{day}"
+                    #print(f"Randomized release date: {release_date}")
+
+                # Formato estándar YYYY-MM-DD que reconoce Windows
+                audio["DATE"] = release_date
+                
+                # Campo de año para reproductores más antiguos
+                audio["YEAR"] = year
+                
+                # Para Windows Media Player y propiedades de Windows
+                audio["WM/YEAR"] = year
+                
+                # Para reproductores que buscan información específica de fecha
+                audio["ORIGINALDATE"] = release_date
+                audio["ORIGINALYEAR"] = year
+                
+                # Añadir explícitamente para properzone Title - Año
+                if "SNG_TITLE" in song:
+                    audio["TITLE"] = song["SNG_TITLE"]
+                
+                # Más campos de fecha específicos para Windows
+                date_parts = release_date.split("-")
+                if len(date_parts) >= 3:
+                    # Añadir fecha de lanzamiento en formato que Windows reconoce
+                    audio["RELEASETIME"] = release_date
+                    audio["RELEASEDATE"] = release_date
+                    
+                    # Para Windows Explorer/Media Player
+                    audio["WM/ORIGINALRELEASETIME"] = release_date
+                    audio["WM/ORIGINALRELEASEYEAR"] = year
+                    
+                #print(f"Added comprehensive date information: {release_date} (Year: {year})")
+            else:
+                print("No release date information found")
+                
+        except Exception as e:
+            print(f"ERROR: Could not add release date information: {e}")
+            
+        # Add label name if available (try from API first)
+        try:
+            label_added = False
+            # 1. Intentar obtener etiqueta desde la API si tenemos album_id
+            if "ALB_ID" in song and not label_added:
+                try:
+                    album_api_url = f"https://api.deezer.com/album/{song['ALB_ID']}"
+                    album_api_resp = requests.get(album_api_url)
+                    if album_api_resp.status_code == 200:
+                        album_api_data = album_api_resp.json()
+                        if "label" in album_api_data and album_api_data["label"]:
+                            audio["ORGANIZATION"] = album_api_data["label"]
+                            audio["PUBLISHER"] = album_api_data["label"]
+                            #print(f"Added label from Deezer API: {album_api_data['label']}")
+                            label_added = True
+                except Exception as e:
+                    print(f"Could not get label from API: {e}")
+            
+            # 2. Usar fuentes tradicionales si la API no funcionó
+            if not label_added:
+                if "LABEL_NAME" in song:
+                    audio["ORGANIZATION"] = song["LABEL_NAME"]
+                    audio["PUBLISHER"] = song["LABEL_NAME"]  # Campo adicional para Windows
+                    #print(f"Added label from song: {song['LABEL_NAME']}")
+                    label_added = True
+                elif album_metadata and "LABEL_NAME" in album_metadata:
+                    audio["ORGANIZATION"] = album_metadata["LABEL_NAME"]
+                    audio["PUBLISHER"] = album_metadata["LABEL_NAME"]  # Campo adicional para Windows
+                    #print(f"Added label from album metadata: {album_metadata['LABEL_NAME']}")
+                    label_added = True
+                    
+            if not label_added:
+                print("No label information found")
+        except Exception as e:
+            print(f"ERROR: Could not add label information: {e}")
+        
+        # Add cover art
+                # Add cover art
+        if "ALB_PICTURE" in song:
+            try:
+                picture_data = downloadpicture(song["ALB_PICTURE"])
+                from mutagen.flac import Picture
+                from PIL import Image
+                import io
+                
+                # Convertir y redimensionar la imagen a 750x750 Baseline
+                try:
+                    # Convertir los bytes de la imagen a un objeto PIL
+                    image = Image.open(io.BytesIO(picture_data))
+                    
+                    # Redimensionar a 750x750
+                    image = image.resize((750, 750), Image.LANCZOS)
+                    
+                    # Guardar en formato JPEG Baseline (progressive=False)
+                    output = io.BytesIO()
+                    image.save(output, format='JPEG', quality=90, optimize=True, progressive=False)
+                    picture_data = output.getvalue()
+                    output.close()
+                    #print("Image converted to 750x750 Baseline JPEG")
+                except ImportError:
+                    print("WARNING: PIL/Pillow not installed, using original image")
+                except Exception as e:
+                    print(f"WARNING: Could not resize image: {e}")
+                
+                # Crear correctamente el objeto Picture
+                pic = Picture()
+                pic.type = 3  # Cover (front)
+                pic.mime = "image/jpeg"
+                pic.desc = "Cover (Front)"
+                pic.data = picture_data
+                
+                # Para Picture usamos las dimensiones actuales
+                pic.width = 750
+                pic.height = 750
+                pic.depth = 24  # Color depth for JPEG
+                
+                # Add the picture to the FLAC file
+                audio.add_picture(pic)
+                #print("Added album cover (750x750 Baseline)")
+            except Exception as e:
+                print(f"ERROR: Could not add album cover to FLAC: {e}")
+        
+        # Asegurarnos de que los campos clave para Windows estén presentes
+        if "release_date" in locals() and release_date:
+            # Este campo es clave para que Windows muestre la fecha en propiedades
+            audio["DATE"] = release_date
+        
+        # Save the changes
+        audio.save()
+        #print(f"Added Vorbis comments to FLAC file: {output_file}")
+
+
+    except Exception as e:
+        print(f"ERROR: Could not add Vorbis comments to FLAC: {e}")
+
+
 def download_song(song: dict, output_file: str) -> None:
     # downloads and decrypts the song from Deezer. Adds ID3 and art cover
     # song: dict with information of the song (grabbed from Deezer.com)
     # output_file: absolute file name of the output file
     assert type(song) is dict, "song must be a dict"
     assert type(output_file) is str, "output_file must be a str"
+
+    # Añadir un bloque para obtener datos del álbum si estamos en FLAC (para los metadatos completos)
+    global album_Data
+    is_flac = sound_format == "FLAC"
+    
+    # Si estamos descargando FLAC y no tenemos datos de álbum,
+    # intentemos obtenerlos desde la canción primero
+    if is_flac and ('album_Data' not in globals() or album_Data is None or "GENRES" not in album_Data):
+        if "ALB_ID" in song:
+            try:
+                #print(f"Pre-fetching album data for better FLAC tags (album ID: {song['ALB_ID']})...")
+                # Esto establecerá album_Data como efecto secundario
+                album_songs = get_song_infos_from_deezer_website(TYPE_ALBUM, song['ALB_ID'])
+                #print("Successfully fetched album data for better metadata")
+            except Exception as e:
+                print(f"WARNING: Could not pre-fetch album data: {e}")
 
     try:
         url = get_song_url(song["TRACK_TOKEN"])
@@ -396,27 +784,31 @@ def download_song(song: dict, output_file: str) -> None:
         with session.get(url, stream=True) as response:
             response.raise_for_status()
             with open(output_file, "w+b") as fo:
-                # Add song cover and first 30 seconds of unencrypted data
-                writeid3v2(fo, song)
-                decryptfile(response, key, fo)
-                writeid3v1_1(fo, song)
+                # For MP3, use ID3 tags as before
+                if not is_flac:
+                    writeid3v2(fo, song)
+                    decryptfile(response, key, fo)
+                    writeid3v1_1(fo, song)
+                else:
+                    # For FLAC, just decrypt the file first
+                    decryptfile(response, key, fo)
+                    
+        # For FLAC files, add Vorbis comments after the file is written
+        if is_flac and os.path.exists(output_file):
+            add_vorbis_tags(song, output_file)
+                    
     except Exception as e:
         raise DeezerApiException(f"Could not write song to disk: {e}") from e
     else:
         print("Download finished: {}".format(output_file))
 
+# Definir album_Data globalmente al inicio del archivo (tras las importaciones)
+album_Data = None
 
 def get_song_infos_from_deezer_website(search_type, id):
-    # search_type: either one of the constants: TYPE_TRACK|TYPE_ALBUM|TYPE_PLAYLIST
-    # id: deezer_id of the song/album/playlist (like https://www.deezer.com/de/track/823267272)
-    # return: if TYPE_TRACK => song (dict grabbed from the website with information about a song)
-    # return: if TYPE_ALBUM|TYPE_PLAYLIST => list of songs
-    # raises
-    # Deezer404Exception if
-    # 1. open playlist https://www.deezer.com/de/playlist/1180748301 and click on song Honey from Moby in a new tab:
-    # 2. Deezer gives you a 404: https://www.deezer.com/de/track/68925038
-    # Deezer403Exception if we are not logged in
-
+    # Declarar como global al inicio de la función
+    global album_Data
+    
     url = "https://www.deezer.com/us/{}/{}".format(search_type, id)
     resp = session.get(url)
     if resp.status_code == 404:
@@ -433,16 +825,174 @@ def get_song_infos_from_deezer_website(search_type, id):
         regex = re.search(r'{"DATA":.*', script)
         if regex:
             DZR_APP_STATE = json.loads(regex.group())
-            global album_Data
             album_Data = DZR_APP_STATE.get("DATA")
-            if DZR_APP_STATE['DATA']['__TYPE__'] == 'playlist' or DZR_APP_STATE['DATA']['__TYPE__'] == 'album':
-                # songs if you searched for album/playlist
-                for song in DZR_APP_STATE['SONGS']['data']:
+            
+            # Intentar obtener el género si no está en los datos del álbum
+            if album_Data and "GENRES" not in album_Data:
+                # Intenta obtener género del artista si está disponible
+                try:
+                    if "ART_ID" in album_Data:
+                        # También podríamos hacer una llamada adicional para obtener géneros
+                        # del artista, pero eso requeriría una API extra
+                        #print(f"No genre information found in album data, adding empty placeholder")
+                        album_Data["GENRES"] = []  # Creamos un array vacío para evitar errores
+                except Exception as e:
+                    print(f"Could not get genre information: {e}")
+            
+
+            if "DATA" in DZR_APP_STATE:
+                # Para playlists y álbumes, asegúrate de que cada canción tenga
+                # la información básica del álbum para mejorar los metadatos
+                if DZR_APP_STATE['DATA']['__TYPE__'] == 'playlist' or DZR_APP_STATE['DATA']['__TYPE__'] == 'album':
+                    # Si estamos procesando una playlist, no usemos album_Data directamente
+                    # ya que contiene datos de la playlist, no del álbum
+                    is_playlist = DZR_APP_STATE['DATA']['__TYPE__'] == 'playlist'
+                    
+                    for song in DZR_APP_STATE['SONGS']['data']:
+                        if is_playlist:
+                            # Para cada canción en una playlist, obtenemos su álbum si es necesario
+                            if "ALB_ID" in song and ("ORIGINAL_RELEASE_DATE" not in song or "GENRES" not in song):
+                                try:
+                                    #print(f"Fetching additional album data for song '{song.get('SNG_TITLE')}' (Album ID: {song['ALB_ID']})")
+                                    # No usamos la variable global aquí para evitar sobrescribirla
+                                    album_info = get_album_data(song['ALB_ID'])
+                                    
+                                    # Copia los datos relevantes del álbum a la canción
+                                    if album_info:
+                                        if "ORIGINAL_RELEASE_DATE" in album_info and "ORIGINAL_RELEASE_DATE" not in song:
+                                            song["ORIGINAL_RELEASE_DATE"] = album_info["ORIGINAL_RELEASE_DATE"]
+                                            #print(f"Added original release date: {album_info['ORIGINAL_RELEASE_DATE']}")
+                                        if "PHYSICAL_RELEASE_DATE" in album_info and "PHYSICAL_RELEASE_DATE" not in song:
+                                            song["PHYSICAL_RELEASE_DATE"] = album_info["PHYSICAL_RELEASE_DATE"]
+                                        if "LABEL_NAME" in album_info and "LABEL_NAME" not in song:
+                                            song["LABEL_NAME"] = album_info["LABEL_NAME"]
+                                        if "GENRES" in album_info and album_info["GENRES"] and "GENRES" not in song:
+                                            song["GENRES"] = album_info["GENRES"]
+                                            if album_info["GENRES"]:
+                                                genres = [g["name"] for g in album_info["GENRES"] if "name" in g]
+                                except Exception as e:
+                                    print(f"Error fetching album data for song: {e}")
+                        else:
+                            # Si es un álbum, usa los datos del álbum directamente
+                            try:
+                                if album_Data and "ORIGINAL_RELEASE_DATE" in album_Data and "ORIGINAL_RELEASE_DATE" not in song:
+                                    song["ORIGINAL_RELEASE_DATE"] = album_Data["ORIGINAL_RELEASE_DATE"]
+                                if album_Data and "PHYSICAL_RELEASE_DATE" in album_Data and "PHYSICAL_RELEASE_DATE" not in song:
+                                    song["PHYSICAL_RELEASE_DATE"] = album_Data["PHYSICAL_RELEASE_DATE"]
+                                if album_Data and "LABEL_NAME" in album_Data and "LABEL_NAME" not in song:
+                                    song["LABEL_NAME"] = album_Data["LABEL_NAME"]
+                                if album_Data and "GENRES" in album_Data and "GENRES" not in song:
+                                    song["GENRES"] = album_Data["GENRES"]
+                            except Exception as e:
+                                print(f"Error copying album metadata to song: {e}")
+                        songs.append(song)
+                elif DZR_APP_STATE['DATA']['__TYPE__'] == 'song':
+                    # Para canciones individuales, usa los datos del álbum disponibles
+                    try:
+                        song = DZR_APP_STATE['DATA']
+                        if album_Data and "ORIGINAL_RELEASE_DATE" in album_Data and "ORIGINAL_RELEASE_DATE" not in song:
+                            song["ORIGINAL_RELEASE_DATE"] = album_Data["ORIGINAL_RELEASE_DATE"]
+                        if album_Data and "PHYSICAL_RELEASE_DATE" in album_Data and "PHYSICAL_RELEASE_DATE" not in song:
+                            song["PHYSICAL_RELEASE_DATE"] = album_Data["PHYSICAL_RELEASE_DATE"]
+                        if album_Data and "LABEL_NAME" in album_Data and "LABEL_NAME" not in song:
+                            song["LABEL_NAME"] = album_Data["LABEL_NAME"]
+                        if album_Data and "GENRES" in album_Data and "GENRES" not in song:
+                            song["GENRES"] = album_Data["GENRES"]
+                    except Exception as e:
+                        print(f"Error copying album metadata to song: {e}")
                     songs.append(song)
-            elif DZR_APP_STATE['DATA']['__TYPE__'] == 'song':
-                # just one song on that page
-                songs.append(DZR_APP_STATE['DATA'])
+            else:
+                # Si solo se obtienen las canciones sin la estructura DATA completa
+                if DZR_APP_STATE['DATA']['__TYPE__'] == 'playlist' or DZR_APP_STATE['DATA']['__TYPE__'] == 'album':
+                    for song in DZR_APP_STATE['SONGS']['data']:
+                        songs.append(song)
+                elif DZR_APP_STATE['DATA']['__TYPE__'] == 'song':
+                    songs.append(DZR_APP_STATE['DATA'])
+    
+    # Si procesamos un álbum, asegúrate de que album_Data contiene la información correcta
+    if search_type == TYPE_ALBUM and DZR_APP_STATE.get("DATA"):
+        album_Data = DZR_APP_STATE.get("DATA")
+        
     return songs[0] if search_type == TYPE_TRACK else songs
+
+# Agrega esta nueva función auxiliar para obtener datos del álbum sin afectar album_Data global
+def get_album_data(album_id):
+    """Obtiene datos del álbum sin modificar la variable global album_Data"""
+    try:
+        url = f"https://www.deezer.com/us/album/{album_id}"
+        resp = session.get(url)
+        if resp.status_code == 404:
+            return None
+        
+        parser = ScriptExtractor()
+        parser.feed(resp.text)
+        parser.close()
+        
+        for script in parser.scripts:
+            regex = re.search(r'{"DATA":.*', script)
+            if regex:
+                DZR_APP_STATE = json.loads(regex.group())
+                if "DATA" in DZR_APP_STATE and DZR_APP_STATE["DATA"]["__TYPE__"] == "album":
+                    return DZR_APP_STATE["DATA"]
+    except Exception as e:
+        print(f"Error fetching album data: {e}")
+    
+    return None
+
+
+
+def get_album_metadata(album_id):
+    """
+    Obtiene metadatos completos de un álbum sin usar variables globales.
+    
+    Args:
+        album_id: ID del álbum en Deezer
+        
+    Returns:
+        dict: Diccionario con todos los metadatos del álbum o None si no se encuentra
+    """
+    try:
+        url = f"https://www.deezer.com/us/album/{album_id}"
+        resp = session.get(url)
+        if resp.status_code == 404:
+            print(f"Album ID {album_id} not found")
+            return None
+        
+        parser = ScriptExtractor()
+        parser.feed(resp.text)
+        parser.close()
+        
+        for script in parser.scripts:
+            regex = re.search(r'{"DATA":.*', script)
+            if regex:
+                DZR_APP_STATE = json.loads(regex.group())
+                if "DATA" in DZR_APP_STATE and DZR_APP_STATE["DATA"]["__TYPE__"] == "album":
+                    album_data = DZR_APP_STATE["DATA"]
+
+                    # Guardamos los datos en un log para depuración
+
+                    try:
+                        with open("album_data", "a", encoding="utf-8") as log_file:
+                            log_file.write(f"Album : {album_id}\n")
+                            for key, value in album_data.items():
+                                log_file.write(f"{key}: {value}\n")
+                            log_file.write("\t--------------------------------------------------\n")
+                    except Exception as e:
+                        print(f"Warning: Could not write to album log: {e}")
+                    
+                    
+                    # Añadir GENRES vacío si no existe
+                    if "GENRES" not in album_data:
+                        album_data["GENRES"] = []
+                    
+                    # Imprimir información útil para depuración
+                    return album_data
+                    
+        print(f"No album data found for album ID {album_id}")
+        return None
+    except Exception as e:
+        print(f"Error fetching album metadata: {e}")
+        return None
 
 
 def deezer_search(search, search_type):
