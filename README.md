@@ -106,7 +106,13 @@ deezer-downloader --show-config-template > config.ini
 You need to set at least:
 - under `[deezer]`: `cookie_arl`, your arl cookie
 - under `[youtubedl]`: `command`, your yt-dlp install path\
-As stated in the config template, deezer-downloader do NOT keep yt-dlp updated, you will have to monitor this yourself.
+
+**Simple yt-dlp setup:**
+1. Download the latest yt-dlp executable from https://github.com/yt-dlp/yt-dlp/releases
+2. Place it in the same directory as your deezer-downloader
+3. In your config.ini file, set the command to `./yt-dlp` (on Linux/Mac) or `.\yt-dlp.exe` (on Windows)
+
+As stated in the config template, deezer-downloader does NOT keep yt-dlp updated, you will have to monitor this yourself.
 
 Check [Settings](#settings) for further instructions.
 
