@@ -48,9 +48,17 @@ workers = 4
 ; valid arl cookie value
 ; login manually using your web browser and take the arl cookie
 cookie_arl = [a-f0-9]{192}
-; mp3 or flac - flac needs premium subscription
-quality = mp3
 
+; ===== SYNCHRONIZED LYRICS (LRC) =====
+; Uncomment and fill the following lines if you want to download .lrc files (synchronized lyrics)
+; IMPORTANT: Values must be placed between double quotes to avoid issues with special characters
+; Example: cookie_fixed_jwt = "eyJhbGciOiJSUzI1NiIsImt..."
+;cookie_refresh_token_D = "your_refresh-token-deezer_here" 
+;cookie_fixed_jwt = "your_jwt_here" 
+;cookie_refresh_token = "your_refresh-token_here" 
+
+; mp3 or flac - flac needs premium subscription
+quality = flac
 [youtubedl]
 ; you are responsible for keeping yt-dlp up-to-date (https://github.com/yt-dlp/yt-dlp)
 ; command = /home/kmille/projects/deezer-downloader/app/venv/bin/yt-dlp

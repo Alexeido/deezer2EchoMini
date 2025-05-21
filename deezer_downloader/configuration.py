@@ -34,8 +34,17 @@ def load_config(config_abs):
             print(f"ERROR: invalid proxy server address: {config['proxy']['server']}")
             sys.exit(1)
 
-    if "DEEZER_COOKIE_ARL" in os.environ.keys():
-        config["deezer"]["cookie_arl"] = os.environ["DEEZER_COOKIE_ARL"]
+    # Process all Deezer cookies from environment variables
+    deezer_cookies = {
+        "DEEZER_COOKIE_ARL": "cookie_arl",
+        "DEEZER_COOKIE_FIXED_JWT": "cookie_fixed_jwt",
+        "DEEZER_COOKIE_REFRESH_TOKEN_D": "cookie_refresh_token_D",
+        "DEEZER_COOKIE_REFRESH_TOKEN": "cookie_refresh_token"
+    }
+    
+    for env_var, config_key in deezer_cookies.items():
+        if env_var in os.environ:
+            config["deezer"][config_key] = os.environ[env_var]
 
     if len(config["deezer"]["cookie_arl"].strip()) == 0:
         print("ERROR: cookie_arl must not be empty")

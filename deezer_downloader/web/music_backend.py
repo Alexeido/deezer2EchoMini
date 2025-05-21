@@ -8,7 +8,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from deezer_downloader.configuration import config
 from deezer_downloader.youtubedl import youtubedl_download
 from deezer_downloader.spotify import get_songs_from_spotify_website
-from deezer_downloader.deezer import TYPE_TRACK, TYPE_ALBUM, TYPE_PLAYLIST, get_song_infos_from_deezer_website, download_song, parse_deezer_playlist, deezer_search, get_deezer_favorites
+from deezer_downloader.deezer import TYPE_TRACK, TYPE_ALBUM, TYPE_PLAYLIST, get_song_infos_from_deezer_website, download_song, download_lrc, parse_deezer_playlist, deezer_search, get_deezer_favorites
 from deezer_downloader.deezer import Deezer403Exception, Deezer404Exception
 from deezer_downloader.deezer import get_file_extension
 
@@ -110,6 +110,13 @@ def download_song_and_get_absolute_filename(search_type, song, playlist_name=Non
 
     if os.path.exists(absolute_filename):
         print("Skipping song '{}'. Already exists.".format(absolute_filename))
+        # check if has lrc file
+        lrc_filename = os.path.splitext(absolute_filename)[0] + ".lrc"
+        if os.path.exists(lrc_filename):
+            print("Skipping lrc file '{}'. Already exists.".format(lrc_filename))
+        else:
+            print("Downloading lrc file '{}'".format(lrc_filename))
+            download_lrc(song['SNG_ID'], lrc_filename)
     else:
         print("Downloading '{}'".format(song_filename))
         download_song(song, absolute_filename)

@@ -8,3 +8,5 @@ __pycache__
 dist
 config.ini
 yt-dlp.exe
+player.html
+/testing

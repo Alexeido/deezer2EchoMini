@@ -9,10 +9,10 @@ This fork of the [Deezer Downloader](https://github.com/kmille/deezer-downloader
   - Preserves and properly formats all original metadata
   - Adds genre tags when available
   - Intelligent release date handling (randomizes day/month when artists only specify the year as 01-01-YYYY)
+- **Synchronized Lyrics Support**: If you want can automatically downloads and saves LRC files with synchronized lyrics when available from Deezer
 - **Echo Mini Compatibility**: Transfer your downloaded playlists and albums directly to your FiiO SnowSky Echo Mini for perfect metadata display and playback experience, this is only for flacs files.
 
 Simply download your favorite music and transfer the folders to your Echo Mini - all metadata will be recognized perfectly without any compatibility issues!
-
 ---
 
 # Deezer Downloader 🎶 🎧 💃 🦄
@@ -34,6 +34,7 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
 ## Table of Contents:
 - [Deezer2EchoMini: Enhanced Deezer Downloader for FiiO SnowSky Echo Mini](#deezer2echomini-enhanced-deezer-downloader-for-fiio-snowsky-echo-mini)
     - [🆕 Added Features:](#-added-features)
+  - [Simply download your favorite music and transfer the folders to your Echo Mini - all metadata will be recognized perfectly without any compatibility issues!](#simply-download-your-favorite-music-and-transfer-the-folders-to-your-echo-mini---all-metadata-will-be-recognized-perfectly-without-any-compatibility-issues)
 - [Deezer Downloader 🎶 🎧 💃 🦄](#deezer-downloader----)
     - [Download music from Deezer and Spotify with a simple web frontend, through a local-hosted service written in Python.](#download-music-from-deezer-and-spotify-with-a-simple-web-frontend-through-a-local-hosted-service-written-in-python)
     - [Features](#features)
@@ -41,7 +42,7 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
   - [Get started](#get-started)
     - [1. Install Python](#1-install-python)
     - [2. Install deezer2EchoMini](#2-install-deezer2echomini)
-    - [3. Retrieve your `arl` cookie](#3-retrieve-your-arl-cookie)
+    - [3. Retrieve your cookies](#3-retrieve-your-cookies)
     - [4. Set the config file](#4-set-the-config-file)
     - [5. Run deezer-downloader](#5-run-deezer-downloader)
     - [6. Access the frontend](#6-access-the-frontend)
@@ -88,13 +89,18 @@ deezer-downloader --config config.ini
 
 Note: This will install the FiiO SnowSky Echo Mini optimized version with all enhanced metadata and album cover features. Do not use `pip install deezer-downloader` as that would install the original version without the Echo Mini optimizations.
 
-### 3. Retrieve your `arl` cookie
+### 3. Retrieve your cookies
 
 On Firefox or Chrome-based browser:
 - Log into your Deezer account
 - Open the DevTools (`F12` or `Ctrl+Shift+C` or `Ctrl+Shift+I`)
 - Go to `Storage` tab
 - In the cookies, find `arl`: a ~200 characters alphanumeric key
+  
+And if you want Lyrics too you need this:
+- In the cookies, find `jwt`: a ~570 characters alphanumeric key
+- In the cookies, find `refresh-token`: a ~220 characters alphanumeric key
+- In the cookies, find `refresh-token-Deezer`: another ~220 characters alphanumeric key
 
 ### 4. Set the config file
 Retrieve the template: 
@@ -104,6 +110,13 @@ deezer-downloader --show-config-template > config.ini
 You need to set at least:
 - under `[deezer]`: `cookie_arl`, your arl cookie
 - under `[youtubedl]`: `command`, your yt-dlp install path\
+  
+And if you want Lyrics too you need this:
+
+- under `[deezer]`: `cookie_fixed_jwt`, your jwt cookie
+- under `[deezer]`: `cookie_refresh_token_D`, your refresh-token-Deezer cookie
+- under `[deezer]`: `cookie_refresh_token`, your refresh-token cookie
+
 
 **Simple yt-dlp setup:**
 1. Download the latest yt-dlp executable from https://github.com/yt-dlp/yt-dlp/releases

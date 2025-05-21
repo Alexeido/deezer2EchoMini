@@ -1,6 +1,8 @@
+import base64
 import sys
 import re
 import json
+import time
 from typing import Optional, Sequence
 
 import requests
@@ -29,6 +31,8 @@ TYPE_ALBUM_TRACK = "album_track" # used for listing songs of an album
 # END TYPES
 
 session = None
+sessionJwt = None
+tmp_jwt = None
 license_token = {}
 sound_format = ""
 USER_AGENT = "Mozilla/5.0 (X11; Linux i686; rv:135.0) Gecko/20100101 Firefox/135.0"
@@ -60,10 +64,10 @@ def get_genres_from_api(album_id):
                 if "name" in genre:
                     genres.append(genre["name"])
             
-            print(f"Géneros encontrados en API para álbum {album_id}: {genres}")
+            #print(f"Géneros encontrados en API para álbum {album_id}: {genres}")
             return genres
         else:
-            print(f"No se encontraron géneros en la API para álbum {album_id}")
+            #print(f"No se encontraron géneros en la API para álbum {album_id}")
             return []
             
     except Exception as e:
@@ -153,7 +157,46 @@ def init_deezer_session(proxy_server: str, quality: str) -> None:
         session.proxies.update({"https": proxy_server})
     license_token, web_sound_quality = get_user_data()
     set_song_quality(quality, web_sound_quality)
+    init_deezer_session_lrc()
 
+def init_deezer_session_lrc() -> None:
+    """
+    Initialize the Deezer session for LRC (lyrics) functionality using raw config values
+    to avoid interpolation issues with % characters in cookies.
+    """
+    # Verificar si existen las opciones necesarias
+    has_jwt = config.has_option('deezer', 'cookie_fixed_jwt')
+    has_refresh_d = config.has_option('deezer', 'cookie_refresh_token_D')
+    has_refresh = config.has_option('deezer', 'cookie_refresh_token')
+    
+    # Obtener los valores usando el parser raw directamente para evitar interpolación
+    if has_jwt and has_refresh_d and has_refresh:
+        # Leer valores sin interpolación
+        jwt = config['deezer'].get('cookie_fixed_jwt', raw=True)
+        refresh_token_d = config['deezer'].get('cookie_refresh_token_D', raw=True)
+        refresh_token = config['deezer'].get('cookie_refresh_token', raw=True)
+        
+        if jwt and refresh_token_d and refresh_token:
+            #print("Using Deezer cookies for LRC")
+            global sessionJwt, tmp_jwt
+            sessionJwt = requests.Session()
+            tmp_jwt = jwt
+            
+            # Cookies de autenticación
+            sessionJwt.cookies.set('arl', config['deezer']['cookie_arl'], domain='deezer.com')
+            sessionJwt.cookies.set('refresh-token', refresh_token, domain='deezer.com')
+            sessionJwt.cookies.set('refresh-token-deezer', refresh_token_d, domain='deezer.com')
+            sessionJwt.cookies.set('jwt', jwt, domain='deezer.com')
+            sessionJwt.cookies.set('jwt-Deezer', jwt, domain='deezer.com')
+    else:
+        print("Mode Without Lyrics.")
+        if has_jwt or has_refresh_d or has_refresh:
+            if not has_jwt:
+                print("WARNING: Missing cookie_fixed_jwt in config file.")
+            if not has_refresh_d:
+                print("WARNING: Missing cookie_refresh_token_D in config file.")
+            if not has_refresh:
+                print("WARNING: Missing cookie_refresh_token in config file.")
 
 class Deezer404Exception(Exception):
     pass
@@ -209,6 +252,68 @@ def blowfishDecrypt(data, key):
     c = Blowfish.new(key.encode(), Blowfish.MODE_CBC, iv)
     return c.decrypt(data)
 
+def is_jwt_expired(token):
+    try:
+        payload_b64 = token.split('.')[1]
+        padding = '=' * (-len(payload_b64) % 4)
+        payload_json = base64.urlsafe_b64decode(payload_b64 + padding)
+        payload = json.loads(payload_json)
+        exp = payload.get('exp')
+        
+        # Use UTC time to match JWT standard timestamps (always in UTC)
+        now = int(time.time())
+        
+        delta = exp - now
+        if delta <= 60:
+            #print(f"❌ JWT expirado o por espirar en un minuto.")
+            return True
+        else:
+            # Convert to human-readable format with time zone info
+            #exp_datetime = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(exp))
+            #local_exp = time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(exp))
+            #print(f"✅ JWT válido. Expira: {exp_datetime} ({local_exp} hora local)")
+            #print(f"   Tiempo restante: {delta//3600} horas y {(delta%3600)//60} minutos.")
+            return False
+    except Exception as e:
+        print(f"⚠️ Error al decodificar JWT: {e}")
+        return True
+# Construcción de sesión con todas las cookies fijas
+
+def updateCookies():
+    """
+    Detect de JWT cookie and update the session has to be done
+    """
+    global sessionJwt, tmp_jwt
+    if sessionJwt:
+        sessionLrc = sessionJwt
+        if is_jwt_expired(tmp_jwt):
+            url = "https://auth.deezer.com/login/renew?jo=p&rto=c&i=c"
+            headers = {
+                "Origin": "https://www.deezer.com",
+                "Referer": "https://www.deezer.com/",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0"
+            }
+            #print("\n--- Enviando renovación JWT ---")
+            #print("URL:   ", url)
+            #print("Headers:", headers)
+            #print("Cookies:", session.cookies.get_dict())
+
+            r = sessionJwt.post(url, headers=headers)
+            #print("Status code:", r.status_code)
+            #print("Body respuesta:", r.text)
+
+            if r.ok:
+                new_jwt = r.json().get('jwt')
+                #print("→ Nuevo JWT")
+                sessionLrc.cookies.set('jwt', new_jwt, domain='deezer.com')
+                sessionLrc.cookies.set('jwt-Deezer', new_jwt, domain='deezer.com')
+                # Almacenar en la variable de sesión
+                tmp_jwt = new_jwt
+                return new_jwt
+            else:
+                print("❌ No se pudo renovar JWT")
+                return None
 
 def decryptfile(fh, key, fo):
     """
@@ -796,6 +901,11 @@ def download_song(song: dict, output_file: str) -> None:
         # For FLAC files, add Vorbis comments after the file is written
         if is_flac and os.path.exists(output_file):
             add_vorbis_tags(song, output_file)
+        download_lrc(song["SNG_ID"], output_file)  # Llamar a la función de descarga de letras aquí
+
+         
+    
+
                     
     except Exception as e:
         raise DeezerApiException(f"Could not write song to disk: {e}") from e
@@ -804,6 +914,183 @@ def download_song(song: dict, output_file: str) -> None:
 
 # Definir album_Data globalmente al inicio del archivo (tras las importaciones)
 album_Data = None
+
+def download_lrc(track_id, output_file):
+    """
+    Download the lyrics for a given track ID and save them to a file.
+    """
+    try:
+        lrc = get_lyrics_lrc(track_id) 
+        if lrc:
+            # Guardamos la letra en un archivo .lrc
+            lrc_file = os.path.splitext(output_file)[0] + ".lrc"
+            with open(lrc_file, "w", encoding="utf-8") as lrc_fo:
+                lrc_fo.write(lrc)
+            print(f"Lyrics saved to {lrc_file}")
+    except Exception as e:
+        print(f"WARNING: Could not get lyrics for song {track_id}: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"WARNING: Could not get lyrics for song {track_id}: {e}")
+
+
+
+# MÉTODO ARREGLADO AQUÍ
+def get_lyrics_lrc(track_id):
+    updateCookies()
+    global sessionJwt, tmp_jwt
+    if sessionJwt is not None:
+
+
+        url = "https://pipe.deezer.com/api"
+        
+        # La query de GraphQL debe ser una cadena limpia, sin comentarios de Python.
+        # Los dobles saltos de línea (\n\n) entre la query principal y los fragments
+        # son importantes y se mantienen.
+        graphql_query = (
+            "query GetLyrics($trackId: String!) {\n"
+            "  track(trackId: $trackId) {\n"
+            "    id\n"
+            "    lyrics {\n"
+            "      id\n"
+            "      text\n"
+            "      ...SynchronizedWordByWordLines\n"
+            "      ...SynchronizedLines\n"
+            "      copyright\n"
+            "      writers\n"
+            "      __typename\n"
+            "    }\n"
+            "    __typename\n"
+            "  }\n"
+            "}\n\n"  # Doble salto de línea
+            "fragment SynchronizedWordByWordLines on Lyrics {\n"
+            "  id\n"
+            "  synchronizedWordByWordLines {\n"
+            "    start\n"
+            "    end\n"
+            "    words {\n"
+            "      start\n"
+            "      end\n"
+            "      word\n"
+            "      __typename\n"
+            "    }\n"
+            "    __typename\n"
+            "  }\n"
+            "  __typename\n"
+            "}\n\n"  # Doble salto de línea
+            "fragment SynchronizedLines on Lyrics {\n"
+            "  id\n"
+            "  synchronizedLines {\n"
+            "    lrcTimestamp\n"
+            "    line\n"
+            "    lineTranslated\n"
+            "    milliseconds\n"
+            "    duration\n"
+            "    __typename\n"
+            "  }\n"
+            "  __typename\n"
+            "}"
+        )
+
+        headers = {
+            "Accept": "*/*",
+            "Accept-Language": "es-ES",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36", # Coincide con tu request
+            "Sec-Ch-Ua": "\"Not.A/Brand\";v=\"99\", \"Chromium\";v=\"136\"",
+            "Sec-Ch-Ua-Platform": "\"Windows\"",
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Content-Type": "application/json",
+            "Origin": "https://www.deezer.com",
+            "Referer": "https://www.deezer.com/",
+            "Authorization": f"Bearer {tmp_jwt}",
+            # Añadimos los headers Sec-Fetch-* que aparecen en tu request capturada
+            "Sec-Fetch-Site": "same-site",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            # "Priority: u=1, i" # Este es menos común que sea necesario, puedes probar con y sin él
+        }
+
+        payload = {
+            "operationName": "GetLyrics",
+            "variables": {"trackId": str(track_id)}, # Asegurarse que track_id es string
+            "query": graphql_query,
+        }
+
+        try:
+            # Hacemos una copia de la session pero SIN LAS COOKIES
+            sessionAux = requests.Session()
+            # Copiamos los headers de la sesión original
+
+            r = sessionAux.post(url, json=payload, headers=headers, timeout=10)
+            
+            # Imprimir detalles para depuración, incluso si es exitoso al principio
+            # print(f"--- Request a {url} ---")
+            # print(f"Headers: {json.dumps(headers, indent=2)}")
+            # print(f"Payload: {json.dumps(payload, indent=2)}")
+            # print(f"Status Code: {r.status_code}")
+            # print(f"Response Body: {r.text[:500]}...") # Imprime solo parte para no saturar
+
+            r.raise_for_status() # Lanza excepción para errores HTTP 4xx/5xx
+
+            data = r.json()
+            
+            # Navegación segura por el JSON
+            track_data = data.get("data", {}).get("track")
+            if not track_data:
+                print(f"ERROR: No se encontró 'track' en la respuesta para ID {track_id}.", file=sys.stderr)
+                print("Respuesta completa:", json.dumps(data, indent=2), file=sys.stderr)
+                return "" # O podrías lanzar una excepción más específica
+
+            lyrics_data = track_data.get("lyrics")
+            if not lyrics_data:
+                print(f"INFO: La canción con ID {track_id} no tiene datos de 'lyrics'.", file=sys.stderr)
+                # Puede que la canción no tenga letra, o no sincronizada.
+                return ""
+
+
+            lines = lyrics_data.get("synchronizedLines")
+            if not lines: # Si no hay synchronizedLines, la canción podría no tener letra o solo letra no sincronizada
+                plain_text_lyrics = lyrics_data.get("text")
+                if plain_text_lyrics:
+                    print(f"INFO: No hay 'synchronizedLines' para ID {track_id}, pero sí texto plano.", file=sys.stderr)
+                    # Devolver la letra como texto plano sin timestamps, o un LRC básico
+                    lrc_lines = ["[offset:0]"]
+                    for line_text in plain_text_lyrics.split('\n'):
+                        if line_text.strip(): # Evitar líneas vacías
+                            lrc_lines.append(f"[00:00.00]{line_text.strip()}")
+                    return "\n".join(lrc_lines)
+                else:
+                    print(f"INFO: No hay 'synchronizedLines' ni 'text' para ID {track_id}.", file=sys.stderr)
+                    return "[offset:0]\n(Letra no disponible)"
+
+
+            return "\n".join(f"{ln['lrcTimestamp']}{ln['line']}" for ln in lines if ln.get('lrcTimestamp') and ln.get('line') is not None)
+
+        except requests.exceptions.HTTPError as e:
+            print(f"ERROR HTTP al pedir la letra: {e.response.status_code}", file=sys.stderr)
+            print(f"URL: {e.request.url}", file=sys.stderr)
+            print(f"Request headers: {json.dumps(dict(e.request.headers), indent=2)}", file=sys.stderr)
+            if e.request.body:
+                try:
+                    print(f"Request body: {json.dumps(json.loads(e.request.body.decode()), indent=2)}", file=sys.stderr)
+                except:
+                    print(f"Request body (raw): {e.request.body.decode()}", file=sys.stderr)
+            print(f"Response text: {e.response.text}", file=sys.stderr)
+            return "" # O podrías relanzar la excepción: raise
+        except requests.exceptions.RequestException as e:
+            print(f"ERROR de red al pedir la letra: {e}", file=sys.stderr)
+            return "" # O podrías relanzar: raise
+        except json.JSONDecodeError:
+            print("ERROR al decodificar JSON de la respuesta de letras.", file=sys.stderr)
+            if 'r' in locals() and r: # si la variable r existe y tiene contenido
+                print("Respuesta recibida:", r.text, file=sys.stderr)
+            return "" # O podrías relanzar: raise
+        except KeyError as e:
+            print(f"ERROR: Falta la clave esperada '{e}' en la respuesta JSON de letras.", file=sys.stderr)
+            if 'data' in locals() and data: # si la variable data existe y tiene contenido
+                print("Estructura de datos recibida:", json.dumps(data, indent=2), file=sys.stderr)
+            return "" # O podrías relanzar: raise
+
+
 
 def get_song_infos_from_deezer_website(search_type, id):
     # Declarar como global al inicio de la función
