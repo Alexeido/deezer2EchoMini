@@ -16,13 +16,11 @@ Simply download your favorite music and transfer the folders to your Echo Mini -
 ---
 
 # Deezer Downloader 🎶 🎧 💃 🦄
-[![tests](https://github.com/kmille/deezer-downloader/actions/workflows/tests.yaml/badge.svg)](https://github.com/kmille/deezer-downloader/actions/workflows/tests.yaml)
-![latest tag](https://img.shields.io/github/v/tag/kmille/deezer-downloader?sort=semver) ![Python 3.9](https://img.shields.io/badge/python-%3E=3.9-blue.svg) ![pypi-version](https://img.shields.io/pypi/v/deezer-downloader) ![pypi-downloads](https://img.shields.io/pypi/dm/deezer-downloader)
 
 ### Download music from Deezer and Spotify with a simple web frontend, through a local-hosted service written in Python.
 
 ### Features
-- download songs, albums, public playlists from Deezer.com (account is required, free plan is enough)
+- download songs, albums, public playlists from Deezer.com (account is required)
 - download Spotify playlists (by parsing the Spotify website and download the songs from Deezer)
 - download as zip file (including m3u8 playlist file)
 - quality: flac or 320 kbit/s mp3 with premium subscription or 128 kbit/s MP3s with free subscription
