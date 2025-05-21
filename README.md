@@ -1,3 +1,20 @@
+# Deezer2EchoMini: Enhanced Deezer Downloader for FiiO SnowSky Echo Mini 
+
+This fork of the [Deezer Downloader](https://github.com/kmille/deezer-downloader) project adds complete FLAC support optimized for the FiiO SnowSky Echo Mini portable music player:
+
+### 🆕 Added Features:
+- **Optimized Album Covers**: Automatically converts all album covers to 750px × 750px JPG with baseline encoding for faster loading on the Echo Mini
+- **Enhanced Metadata Support**: 
+  - Use Vorbis for Flac files instead a id3
+  - Preserves and properly formats all original metadata
+  - Adds genre tags when available
+  - Intelligent release date handling (randomizes day/month when artists only specify the year as 01-01-YYYY)
+- **Echo Mini Compatibility**: Transfer your downloaded playlists and albums directly to your FiiO SnowSky Echo Mini for perfect metadata display and playback experience, this is only for flacs files.
+
+Simply download your favorite music and transfer the folders to your Echo Mini - all metadata will be recognized perfectly without any compatibility issues!
+
+---
+
 # Deezer Downloader 🎶 🎧 💃 🦄
 [![tests](https://github.com/kmille/deezer-downloader/actions/workflows/tests.yaml/badge.svg)](https://github.com/kmille/deezer-downloader/actions/workflows/tests.yaml)
 ![latest tag](https://img.shields.io/github/v/tag/kmille/deezer-downloader?sort=semver) ![Python 3.9](https://img.shields.io/badge/python-%3E=3.9-blue.svg) ![pypi-version](https://img.shields.io/pypi/v/deezer-downloader) ![pypi-downloads](https://img.shields.io/pypi/dm/deezer-downloader)
@@ -17,23 +34,37 @@
 - proxy support (https/socks5)
 
 ## Table of Contents:
-- [Get started](#get-started)
-  - [Install Python](#1-install-python)
-  - [Install deezer-downloader](#2-install-deezer-downloader)
-  - [Retrieve your arl cookie](#3-retrieve-your-arl-cookie)
-  - [Set the config file](#4-set-the-config-file)
-  - [Run deezer-downloader](#5-run-deezer-downloader)
-  - [Access the frontend](#6-access-the-frontend)
-- [Settings](#settings)
-- [Specific use cases](#specific-use-cases)
-  - [Run with Docker](#run-with-docker)
-  - [Run with Vagrant](#run-with-vagrant)
-  - [Run as a service](#run-as-a-service)
-  - [Developer setup](#developer-setup)
-  - [Deployment with Ansible](#deployment-with-ansible)
-- [Screenshots](#screenshots)
-- [Tests](#tests)
-- [Changelog](#changelog)
+- [Deezer2EchoMini: Enhanced Deezer Downloader for FiiO SnowSky Echo Mini](#deezer2echomini-enhanced-deezer-downloader-for-fiio-snowsky-echo-mini)
+    - [🆕 Added Features:](#-added-features)
+- [Deezer Downloader 🎶 🎧 💃 🦄](#deezer-downloader----)
+    - [Download music from Deezer and Spotify with a simple web frontend, through a local-hosted service written in Python.](#download-music-from-deezer-and-spotify-with-a-simple-web-frontend-through-a-local-hosted-service-written-in-python)
+    - [Features](#features)
+  - [Table of Contents:](#table-of-contents)
+  - [Get started](#get-started)
+    - [1. Install Python](#1-install-python)
+    - [2. Install deezer-downloader](#2-install-deezer-downloader)
+    - [3. Retrieve your `arl` cookie](#3-retrieve-your-arl-cookie)
+    - [4. Set the config file](#4-set-the-config-file)
+    - [5. Run deezer-downloader](#5-run-deezer-downloader)
+    - [6. Access the frontend](#6-access-the-frontend)
+  - [Settings](#settings)
+  - [Specific use cases](#specific-use-cases)
+    - [Run with Docker](#run-with-docker)
+    - [Run with Vagrant](#run-with-vagrant)
+    - [Run as systemd service](#run-as-systemd-service)
+    - [Developer setup](#developer-setup)
+    - [Deployment with Ansible](#deployment-with-ansible)
+  - [Screenshots](#screenshots)
+  - [Shortcuts](#shortcuts)
+  - [Tests](#tests)
+  - [Changelog](#changelog)
+    - [Version 2.0.0 (27.03.2023)](#version-200-27032023)
+    - [Version 1.3.3 (27.12.2021)](#version-133-27122021)
+    - [Version 1.3.2 (26.11.2021)](#version-132-26112021)
+    - [Version 1.3.1 (21.01.2021)](#version-131-21012021)
+    - [Version 1.3 (05.11.2020)](#version-13-05112020)
+    - [Version 1.2 (01.11.2020)](#version-12-01112020)
+    - [Version 1.1 (13.05.2020)](#version-11-13052020)
 
 ## Get started
 
